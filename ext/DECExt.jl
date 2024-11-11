@@ -5,7 +5,11 @@ export delaunayGraph, stardiags
 using Triangulate, Graphs, SparseArrays, LinearAlgebra
 using ddHodge.DEC
 
-"Delaunay triangulation and the curl operator"
+"""
+    DEC.delaunayGraph(pts; option="Qev")
+
+Construct graph using Delaunay triangulation and the curl operator
+"""
 function DEC.delaunayGraph(pts::AbstractMatrix;option="Qev")
     nip = size(pts,2)
     triio = TriangulateIO()
@@ -38,7 +42,11 @@ function DEC.delaunayGraph(pts::AbstractMatrix;option="Qev")
     return(graph=h,triangles=vtri,curl=curl,voronoi=vout,duale=duale)
 end
 
-"Diagonal elements of Hodge star (for triangle mesh)"
+"""
+    DEC.stardiags(g, pts, tri)
+
+Returns diagonal elements of Hodge star of triangle mesh
+"""
 function DEC.stardiags(g::SimpleGraph,pts::AbstractMatrix,tri::Matrix{Int32})
     # cotangents of triangles
     cotans = similar(tri,Float64)

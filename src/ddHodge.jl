@@ -18,8 +18,31 @@ module GPU
 end
 
 """
-Grad operator from graph
-The sign implies the edge direction, i.e., i->j if j > i
+    graphgrad(g)
+
+Construct grad operator from graph `g`
+
+The direction is implicitly determined by node order, i.e., `i -> j` if `i < j`.
+
+# Example
+```jldoctest
+julia> using ddHodge.Graphs
+
+julia> g = complete_graph(3)
+{3, 3} undirected simple Int64 graph
+
+julia> collect(edges(g))
+3-element Vector{Graphs.SimpleGraphs.SimpleEdge{Int64}}:
+ Edge 1 => 2
+ Edge 1 => 3
+ Edge 2 => 3
+
+julia> d0 = ddHodge.graphgrad(g)
+3×3 SparseArrays.SparseMatrixCSC{Float64, Int64} with 6 stored entries:
+ -1.0   1.0   ⋅ 
+ -1.0    ⋅   1.0
+   ⋅   -1.0  1.0
+```
 """
 function graphgrad(g::SimpleGraph{Int})
     I = sparse(1:ne(g), src.(edges(g)), -1.0, ne(g), nv(g))
@@ -27,7 +50,7 @@ function graphgrad(g::SimpleGraph{Int})
     I + J
 end
 
-"Approximate the integration of flux along edges"
+# Approximate the integration of flux along edges
 function calcwt(g::SimpleGraph{Int},pts::AbstractMatrix,vel::AbstractMatrix)
     map(edges(g)) do e
         i, j = src(e), dst(e)
@@ -36,6 +59,10 @@ function calcwt(g::SimpleGraph{Int},pts::AbstractMatrix,vel::AbstractMatrix)
     end
 end
 
+"""
+    kNNGraph(X, k)
+Graph construction using k-NN
+"""
 function kNNGraph(X::AbstractMatrix,k::Int)
     N = size(X,2)
     kdtree = KDTree(X)
@@ -54,7 +81,7 @@ function kNNGraph(X::AbstractMatrix,k::Int)
     g, kdtree, idxs, dists
 end
  
-"Coefficients of directional derivatives w.r.t. Hessian"
+# Coefficients of directional derivatives w.r.t. Hessian
 function chesse(v)
     n = length(v)
     c = fill(0.0::Float64,Int(n*(n-1)/2))
@@ -66,7 +93,7 @@ function chesse(v)
     [v.^2; c]
 end
 
-"Preparing the coefficients to solve batch Hessian estimation"
+# Preparing the coefficients to solve batch Hessian estimation
 function localHessNS(
     g::SimpleGraph{Int},
     i::Int,
@@ -90,7 +117,7 @@ function localHessNS(
     (E=E, y=y, d=d)
 end
 
-"Reshape the result into the Hessian matrix form"
+# Reshape the result into the Hessian matrix form
 function chesse2mat(x,d)
     H = fill(0.0, d, d)
     H[diagind(H)] = x[1:d]
@@ -103,7 +130,7 @@ function chesse2mat(x,d)
     Symmetric(H)
 end
 
-"Get dual velocities in the given span"
+# Get dual velocities in the given span
 function dualvels(V, spans; d=[1,2])
     hcat(map(1:length(spans)) do i
         S = spans[i][:,d]
@@ -111,10 +138,8 @@ function dualvels(V, spans; d=[1,2])
     end...)
 end
 
-"""
-General purpose function:
- Propagate values to neighboring vertices from root (along BFS tree)
-"""
+# General purpose function:
+#  Propagate values to neighboring vertices from root (along BFS tree)
 function propagate(f::Function, g::AbstractGraph, init::T; root::Int=1) where T
     #st = Array{typeof(init),1}(undef,nv(g))
     st = Array{T}(undef,nv(g))
@@ -131,7 +156,7 @@ function propagate(f::Function, g::AbstractGraph, init::T; root::Int=1) where T
     return st
 end
 
-"Get subspace of a i-th point by local PCA"
+# Get subspace of a i-th point by local PCA
 function getspan(g::SimpleGraph{Int},pts::AbstractMatrix,i::Int,d::Int; ref=nothing)
     nei = neighbors(g,i)
     nnei = length(nei)
@@ -161,7 +186,7 @@ function getspan(g::SimpleGraph{Int},pts::AbstractMatrix,i::Int,d::Int; ref=noth
     U
 end
 
-"Get all spans while aligning orientations of tangent spaces"
+# Get all spans while aligning orientations of tangent spaces
 function oriented_spans(g::SimpleGraph{Int},pts::AbstractMatrix,d::Int,root::Int)
     fdim, N = size(pts)
     rspan = getspan(g,pts,root,d,ref=Matrix(I,fdim,d))
@@ -174,7 +199,7 @@ function oriented_spans(g::SimpleGraph{Int},pts::AbstractMatrix,d::Int,root::Int
     spans
 end
 
-"Storing the restriction map"
+# Storing the restriction map
 struct Rmap 
     Oi ::Matrix{Float64} # transfer i -> e 
     Oj ::Matrix{Float64} # transfer j -> e
@@ -183,24 +208,18 @@ struct Rmap
     pa ::Array{Float64}  # principal angles
 end
 
-"""
-Calculate subspace alignment
-Singer, A. & Wu, H.-T. Vector diffusion maps and the connection Laplacian. Communications on Pure and Applied Mathematics 65, 1067–1144 (2012).
-"""
+# Calculate subspace alignment
+# [ref] Singer, A. & Wu, H.-T. Vector diffusion maps and the connection Laplacian. Communications on Pure and Applied Mathematics 65, 1067–1144 (2012).
 function connectspans(Ui::AbstractMatrix, Uj::AbstractMatrix)
     sv = svd(Matrix(Ui'Uj))
     pa = acos.(clamp.(sv.S,0,1)) # Principal angles
     Rmap(sv.U', sv.Vt, pa) # Oi=U', Oj=V' since Oi'*Oj=U*V'
 end
 
-"""
-Gradient operater of sheaf over graph
-
-* Cellular sheaf over graph, Hansen & Ghrist (2020)
-
-todo: applicability for variable sheaf dimensions
-remark: valid under the assumption of src(e) < dst(e)
-"""
+# Gradient operater of sheaf over graph
+# Cellular sheaf over graph, Hansen & Ghrist (2020)
+# todo: applicability for variable sheaf dimensions
+# remark: valid under the assumption of src(e) < dst(e)
 function d0sheaf(g::SimpleGraph{Int}, rmaps::Dict{Tuple{Int,Int},Rmap})
     d  = length(first(rmaps)[2].pa)
     Is = Vector{Int}(undef,0)
@@ -221,7 +240,7 @@ function d0sheaf(g::SimpleGraph{Int}, rmaps::Dict{Tuple{Int,Int},Rmap})
     sparse(Is, Js, Vs, d*ne(g), d*nv(g))
 end
 
-"Batch Hessian matrix estimation"
+# Batch Hessian matrix estimation
 function batchHessCU(
     g::SimpleGraph{Int}, pts::AbstractMatrix, vel::AbstractMatrix, Δ₀::SparseMatrixCSC;
     d=size(pts,1)::Int, λ=0.1::AbstractFloat, Ψ=fill(I,nv(g))::Array{AbstractMatrix},
@@ -253,7 +272,12 @@ function batchHessCU(
 end
 
 
-"ddHodge standard workflow"
+"""
+    ddHodgeWorkflow(g, X, V;
+        ldim=size(X,1)::Int, λ=0.1, ϵ=0.1, ssa=true, ssart=1, krytol=1e-32, useCUDA=false)
+
+ddHodge standard workflow
+"""
 function ddHodgeWorkflow(
     g::SimpleGraph, X::AbstractMatrix, V::AbstractMatrix;
     ldim=size(X,1)::Int, λ=0.1, ϵ=0.1, ssa=true, ssart=1, krytol=1e-32, useCUDA=false
@@ -333,14 +357,24 @@ function ddHodgeWorkflow(
     )
 end
 
-"Get selected invariant subspace"
+"""
+    schursel(F::Schur, idx)
+
+Get selected invariant subspace calculated by `schur`. 
+"""
 function schursel(F::Schur,idx::Vector{Int})
     k = length(idx)
     T, Z, vals = ordschur(F,[i in idx for i in 1:length(F.values)])
     vals[1:k], Z[:,1:k] # first k vectors span invariant sub.
 end
 
-"Basis trans. of matrix X in V into W; dim(V ⋂ W) should not be 0"
+"""
+    basistrans(X, V, W)
+
+Basis trans. of matrix `X` in `V` into `W`
+
+Caution: dim(V ⋂ W) should not be 0.
+"""
 basistrans(X::AbstractMatrix,V::AbstractMatrix,W::AbstractMatrix) = ((W'*W)\(W'*V))*X*((V'*V)\(V'*W))
 
 end # module ddHodge
