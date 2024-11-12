@@ -6,14 +6,15 @@ using LinearAlgebra, SparseArrays, Graphs
 using KrylovKit: linsolve, eigsolve
 using NearestNeighbors: KDTree, knn
 
-
 module DEC
     function delaunayGraph end
     function stardiags end
 end
 
 module GPU
+    # Placeholder of `CUDA.CUSPARSE.CuSparseMatrixCSR`
     function cuspm end
+    # Placeholder of `CUDA.CuVector`
     function cuvec end
 end
 
@@ -72,7 +73,7 @@ function kNNGraph(X::AbstractMatrix,k::Int)
         for j in 2:(k+1)
             # disconnect if zero distance
             if dists[i][j] > 0.0
-                add_edge!(g,v[1],v[j])
+                add_edge!(g,v[begin],v[j])
             end
         end
     end
@@ -255,7 +256,7 @@ function batchHessCU(
     Ms = [sparse(mapslices(chesse,h.E,dims=1)') for h in lh]
     X = blockdiag(Ms...)
     #X = mapfoldl(h -> sparse(mapslices(chesse,h.E,dims=1)'), blockdiag, lh)
-    p = size(Ms[1],2)
+    p = size(Ms[begin],2)
     # L = -Δ₀ since (∇β)'(∇β) = -β'Δ₀β 
     L = kron(-Δ₀,sparse(I,p,p)) # shape of Hessians should be same
     #sol, = linsolve(X'D*X + λ*L, X'D*y, isposdef=true)
@@ -271,6 +272,34 @@ function batchHessCU(
     chesse2mat.(eachcol(params),d)
 end
 
+# Stores workflow results
+struct ddhResult{T<:AbstractFloat}
+    ldim::Int
+    # vertex-level features
+    u::Vector{T}
+    div::Vector{T}
+    rot::Vector{T}
+    vgrass::Vector{T}
+    spans::Vector{Matrix{T}}
+    frames::Vector{Matrix{T}}
+    planes::Vector{Matrix{T}}
+    H::Vector{Matrix{T}}
+    J::Vector{Matrix{T}}
+    # edge-level features
+    w::Vector{T}
+    egrass::Vector{T}
+    rmaps::Dict{Tuple{Int,Int}, Rmap}
+    # gradient operators
+    d0::SparseArrays.SparseMatrixCSC
+    d0s::SparseArrays.SparseMatrixCSC
+end
+
+function Base.show(io::IO, ::MIME"text/plain", ddh::ddhResult)
+    nv = length(ddh.u)
+    ne = length(ddh.w)
+    fdim = size(ddh.spans[begin],1)
+    print(io,"ddHodge result: Base graph {$nv, $ne}, Dimension $fdim -> $(ddh.ldim)")
+end
 
 """
     ddHodgeWorkflow(g, X, V;
@@ -324,7 +353,8 @@ function ddHodgeWorkflow(
     # Vertex-level Grassmann distance normalized by edge length
     pas = hcat([rms[Tuple(e)].pa for e in edges(g)]...)
     elen = [norm(X[:,src(e)]-X[:,dst(e)]) for e in edges(g)]
-    vgrass = spdiagm(degree(g).^-1)*abs.(d0)'*(norm.(eachcol(pas))./elen)
+    egrass = norm.(eachcol(pas)) # Grassmann distance
+    vgrass = spdiagm(degree(g).^-1)*abs.(d0)'*(egrass./elen)
     elapsed(t0)
     @info "(3/4) Hessian matrix estimation"
     t0 = time()
@@ -335,7 +365,7 @@ function ddHodgeWorkflow(
     t0 = time()
     if ssa
         rplanes = [S[:,1:2] for S in spans]
-        ofix(cur,ref) = det(cur'*ref) < 0 ? [cur[:,1:end-1] -cur[:,end]] : cur
+        ofix(cur,ref) = det(cur'*ref) < 0 ? [cur[:,begin:end-1] -cur[:,end]] : cur
         oplanes = propagate((pa,ch,ref) -> ofix(rplanes[ch],ref), g, rplanes[ssart], root=ssart)
     else
         oplanes = oriented_spans(g,X,2,ssart)
@@ -349,11 +379,12 @@ function ddHodgeWorkflow(
     # reconstruction of jacobian: J = D(F) = D(-grad) + D(rot) + D(harmonic)
     rjacobs = [-rhess[i] + R2Ψ(rotr[i],oplanes[i],Ψ[i]) for i in 1:N]
     elapsed(t0)
-    (
-        ldim=ldim,
-        w=w, u=u, div=divr, rot=rotr, vgrass=vgrass,
-        d0=d0, d0s=d0s, spans=spans, oplanes=oplanes,
-        rmaps=rms, frames=Ψ,H=rhess, J=rjacobs
+    ddhResult{eltype(w)}(
+        ldim,
+        u, divr, rotr, vgrass, # vertex-level values
+        spans, Ψ, oplanes, rhess, rjacobs, # vertex-level matrices
+        w, egrass, rms, # edge-level features
+        d0, d0s # operators
     )
 end
 
@@ -373,7 +404,8 @@ end
 
 Basis trans. of matrix `X` in `V` into `W`
 
-Caution: dim(V ⋂ W) should not be 0.
+!!! warning "Warning"
+    dim(V ⋂ W) should not be 0.
 """
 basistrans(X::AbstractMatrix,V::AbstractMatrix,W::AbstractMatrix) = ((W'*W)\(W'*V))*X*((V'*V)\(V'*W))
 

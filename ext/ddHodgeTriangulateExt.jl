@@ -1,4 +1,4 @@
-module DECExt
+module ddHodgeTriangulateExt
 
 export delaunayGraph, stardiags
 
@@ -87,4 +87,4 @@ function DEC.stardiags(g::SimpleGraph,pts::AbstractMatrix,tri::Matrix{Int32})
     return vdual, edual
 end
 
-end # module DECExt
+end # module ddHodgeTriangulateExt
