@@ -1,6 +1,6 @@
 module ddHodge
 
-export kNNGraph, ddHodgeWorkflow
+export schurselect, basischange, kNNGraph, ddHodgeWorkflow
 
 using LinearAlgebra, SparseArrays, Graphs
 using KrylovKit: linsolve, eigsolve
@@ -27,7 +27,7 @@ The direction is implicitly determined by node order, i.e., `i -> j` if `i < j`.
 
 # Example
 ```jldoctest
-julia> using ddHodge.Graphs
+julia> using Graphs
 
 julia> g = complete_graph(3)
 {3, 3} undirected simple Int64 graph
@@ -52,7 +52,7 @@ function graphgrad(g::SimpleGraph{Int})
 end
 
 # Approximate the integration of flux along edges
-function calcwt(g::SimpleGraph{Int},pts::AbstractMatrix,vel::AbstractMatrix)
+function calcwt(g::SimpleGraph{Int}, pts::AbstractMatrix, vel::AbstractMatrix)
     map(edges(g)) do e
         i, j = src(e), dst(e)
         dx = pts[:,j] - pts[:,i] # i to j
@@ -61,10 +61,11 @@ function calcwt(g::SimpleGraph{Int},pts::AbstractMatrix,vel::AbstractMatrix)
 end
 
 """
-    kNNGraph(X, k)
+    kNNGraph(X::Matrix, k::Int) -> (g::SimpleGraph, kdtree::KDTree)
+
 Graph construction using k-NN
 """
-function kNNGraph(X::AbstractMatrix,k::Int)
+function kNNGraph(X::AbstractMatrix, k::Int)
     N = size(X,2)
     kdtree = KDTree(X)
     idxs, dists = knn(kdtree, X, k+1, true)
@@ -83,9 +84,9 @@ function kNNGraph(X::AbstractMatrix,k::Int)
 end
  
 # Coefficients of directional derivatives w.r.t. Hessian
-function chesse(v)
+function chesse(v::Vector{T}) where T<:AbstractFloat
     n = length(v)
-    c = fill(0.0::Float64,Int(n*(n-1)/2))
+    c = fill(0.0::T, Int(n*(n-1)/2))
     k = 1
     for i in 1:n-1, j in i+1:n
         c[k] = 2*v[i]*v[j]
@@ -119,7 +120,7 @@ function localHessNS(
 end
 
 # Reshape the result into the Hessian matrix form
-function chesse2mat(x,d)
+function chesse2mat(x::AbstractVector, d::Int)
     H = fill(0.0, d, d)
     H[diagind(H)] = x[1:d]
     k = d+1
@@ -132,7 +133,7 @@ function chesse2mat(x,d)
 end
 
 # Get dual velocities in the given span
-function dualvels(V, spans; d=[1,2])
+function dualvels(V::AbstractMatrix, spans::Vector{<:AbstractMatrix}; d=[1,2]::Vector{Int})
     hcat(map(1:length(spans)) do i
         S = spans[i][:,d]
         S*[0 -1; 1 0]*S'*V[:,i]
@@ -158,7 +159,7 @@ function propagate(f::Function, g::AbstractGraph, init::T; root::Int=1) where T
 end
 
 # Get subspace of a i-th point by local PCA
-function getspan(g::SimpleGraph{Int},pts::AbstractMatrix,i::Int,d::Int; ref=nothing)
+function getspan(g::SimpleGraph{Int}, pts::AbstractMatrix, i::Int, d::Int; ref=nothing)
     nei = neighbors(g,i)
     nnei = length(nei)
     if nnei == 0
@@ -188,7 +189,7 @@ function getspan(g::SimpleGraph{Int},pts::AbstractMatrix,i::Int,d::Int; ref=noth
 end
 
 # Get all spans while aligning orientations of tangent spaces
-function oriented_spans(g::SimpleGraph{Int},pts::AbstractMatrix,d::Int,root::Int)
+function oriented_spans(g::SimpleGraph{Int}, pts::AbstractMatrix, d::Int, root::Int)
     fdim, N = size(pts)
     rspan = getspan(g,pts,root,d,ref=Matrix(I,fdim,d))
     spans = propagate((pa,ch,vpa) -> getspan(g,pts,ch,d,ref=vpa), g, rspan, root=root)
@@ -241,8 +242,47 @@ function d0sheaf(g::SimpleGraph{Int}, rmaps::Dict{Tuple{Int,Int},Rmap})
     sparse(Is, Js, Vs, d*ne(g), d*nv(g))
 end
 
+"""
+    alignSpaces(graph, subspaces) -> (alignedSpaces, sheafGrad, restrictionMaps)
+
+Solves subspace alignment problem by minimizing Rayleigh quotient of sheaf (connection) laplacian ``\\Delta_s``
+
+```math
+\\min_{\\bm x} \\sum_{(u,v) \\in E} \\|O_u \\bm x_u - O_v \\bm x_v\\|^2 = \\bm x^\\top \\Delta_s \\bm x
+```
+where ``O_u, O_v`` are the restriction maps of parallel transport matrix.
+
+"""
+function alignSpaces(
+    g::SimpleGraph{Int}, ss::Vector{<:AbstractMatrix};
+    krytol=1e-32::Float64, useCUDA=false::Bool
+)
+    N = nv(g)
+    damb, d = size(ss[begin])
+    rms = Dict([Tuple(e) => connectspans(ss[src(e)],ss[dst(e)]) for e in edges(g)])
+    d0 = d0sheaf(g,rms) # Sheaf gradient
+    cuspm = useCUDA ? GPU.cuspm : identity
+    cuvec = useCUDA ? GPU.cuvec : identity
+    L = cuspm(d0'd0)
+    #  x0 = cuvec(rand(N*d))
+    x0 = cuvec(fill(1.0,N*d))
+    #if usenormalL # faster calculation for Hessian?
+        #Dhi = spdiagm(repeat(degree(g).^(-1/2),inner=d))
+        #L = Dhi*L*Dhi
+    #end
+    vals, vecs, = eigsolve(L,x0,d,:SR,issymmetric=true,tol=krytol)
+    vecs = collect.(vecs) # to cpu
+    vec2dir(x) = normalize.(eachcol(reshape(x,(d,N))))
+    # Parallel tangent vectors
+    tvs = [hcat(ss.*vec2dir(v)...) for v in vecs[1:d]]
+    # Aligned subspaces (pick each tangent vecs)
+    #  sa = [hcat([tvs[i][:,j] for i in 1:d]...) for j in 1:N]
+    sa = collect(eachslice(reshape(vcat(tvs...),damb,d,N),dims=3))
+    sa, d0, rms
+end
+
 # Batch Hessian matrix estimation
-function batchHessCU(
+function batchHess(
     g::SimpleGraph{Int}, pts::AbstractMatrix, vel::AbstractMatrix, Δ₀::SparseMatrixCSC;
     d=size(pts,1)::Int, λ=0.1::AbstractFloat, Ψ=fill(I,nv(g))::Array{AbstractMatrix},
     maxiter=5000::Int, useCUDA=false::Bool
@@ -272,44 +312,51 @@ function batchHessCU(
     chesse2mat.(eachcol(params),d)
 end
 
-# Stores workflow results
+"Container of the workflow results"
 struct ddhResult{T<:AbstractFloat}
-    ldim::Int
-    # vertex-level features
+    # Basic parameters
+    fdim::Int
+    rdim::Int
+    ssa::Bool
+    # Vertex features
     u::Vector{T}
     div::Vector{T}
     rot::Vector{T}
-    vgrass::Vector{T}
+    vgrass::Union{Vector{T},Nothing}
     spans::Vector{Matrix{T}}
     frames::Vector{Matrix{T}}
     planes::Vector{Matrix{T}}
     H::Vector{Matrix{T}}
     J::Vector{Matrix{T}}
-    # edge-level features
+    # Edge features
     w::Vector{T}
-    egrass::Vector{T}
-    rmaps::Dict{Tuple{Int,Int}, Rmap}
-    # gradient operators
+    egrass::Union{Vector{T},Nothing}
+    rmaps::Union{Dict{Tuple{Int,Int}, Rmap}, Nothing}
+    # Grad operators
     d0::SparseArrays.SparseMatrixCSC
-    d0s::SparseArrays.SparseMatrixCSC
+    d0s::Union{SparseArrays.SparseMatrixCSC, Nothing}
 end
 
 function Base.show(io::IO, ::MIME"text/plain", ddh::ddhResult)
-    nv = length(ddh.u)
-    ne = length(ddh.w)
-    fdim = size(ddh.spans[begin],1)
-    print(io,"ddHodge result: Base graph {$nv, $ne}, Dimension $fdim -> $(ddh.ldim)")
+    fd, rd = size(ddh.spans[begin])
+    ne, nv = size(ddh.d0)
+    fd, rd, ssa = [getfield(ddh,x) for x in [:fdim,:rdim,:ssa]]
+    ssa = ssa ? "on" : "off"
+    print(io,":::ddHodgge::: values over graph {$nv, $ne}, dimensions: $fd -> $rd (ssa: $ssa)")
 end
 
 """
     ddHodgeWorkflow(g, X, V;
-        ldim=size(X,1)::Int, λ=0.1, ϵ=0.1, ssa=true, ssart=1, krytol=1e-32, useCUDA=false)
+        rdim=size(X,1)::Int, λ=0.1, ϵ=0.1,
+        ssa=true, ssart=1, krytol=1e-32, useCUDA=false
+    ) -> ddh::ddhResult
 
 ddHodge standard workflow
 """
 function ddHodgeWorkflow(
     g::SimpleGraph, X::AbstractMatrix, V::AbstractMatrix;
-    ldim=size(X,1)::Int, λ=0.1, ϵ=0.1, ssa=true, ssart=1, krytol=1e-32, useCUDA=false
+    rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64,
+    ssa=true::Bool, ssart=1::Int, krytol=1e-32::Float64, useCUDA=false::Bool
 )
     fdim, N = size(X)
     # Easy timer
@@ -324,90 +371,115 @@ function ddHodgeWorkflow(
     @info "(2/4) Tangent space estimation"
     t0 = time()
     # Try to keep orientations of tangent spaces (local PCA) 
-    #spans = fdim > ldim ? oriented_spans(g,X,ldim,ssart) : fill(Matrix(1.0I,fdim,fdim),N)
-    spans = oriented_spans(g,X,ldim,ssart)
+    spans = oriented_spans(g,X,rdim,ssart)
     concs = [sign(det(spans[src(e)]'spans[dst(e)])) for e in edges(g)]
     @info "Consistency of orientations: $(sum(concs .> 0)/ne(g))" 
-    # Restriction maps and sheaf on graph
-    rms = Dict([Tuple(e) => connectspans(spans[src(e)],spans[dst(e)]) for e in edges(g)])
-    d0s = d0sheaf(g,rms) # Sheaf gradient
+    # Subspace alignment of local PCA spaces on nodes
     if ssa
-        cuspm = useCUDA ? GPU.cuspm : identity
-        cuvec = useCUDA ? GPU.cuvec : identity
-        L0s = cuspm(d0s'd0s)
-        x0 = cuvec(rand(N*ldim))
-        #if usenormalL # faster calculation for Hessian?
-            #Dhi = spdiagm(repeat(degree(g).^(-1/2),inner=ldim))
-            #L0s = Dhi*L0s*Dhi
-        #end
-        vals, vecs, = eigsolve(L0s,x0,ldim,:SR,issymmetric=true,tol=krytol)
-        vecs = collect.(vecs) # to cpu
-        vec2dir(x) = normalize.(eachcol(reshape(x,(ldim,N))))
-        # Basis matrix of each local dimension
-        frames = [hcat(spans.*vec2dir(v)...) for v in vecs[1:ldim]]
-        # Basis matrix of each vertex
-        Ψ = @views [hcat([frames[i][:,j] for i in 1:ldim]...) for j in 1:N]
+        frames, d0s, rms = alignSpaces(g, spans; krytol=krytol, useCUDA=useCUDA)
+        pas = hcat([rms[Tuple(e)].pa for e in edges(g)]...)
+        elen = [norm(X[:,src(e)]-X[:,dst(e)]) for e in edges(g)]
+        egrass = norm.(eachcol(pas)) # Grassmann distance
+        vgrass = spdiagm(degree(g).^-1)*abs.(d0)'*(egrass./elen)
     else
-        Ψ = @views spans
+        frames = @views spans
+        d0s = nothing
+        rms = nothing
+        egrass = nothing
+        vgrass = nothing
     end
     # Vertex-level Grassmann distance normalized by edge length
-    pas = hcat([rms[Tuple(e)].pa for e in edges(g)]...)
-    elen = [norm(X[:,src(e)]-X[:,dst(e)]) for e in edges(g)]
-    egrass = norm.(eachcol(pas)) # Grassmann distance
-    vgrass = spdiagm(degree(g).^-1)*abs.(d0)'*(egrass./elen)
     elapsed(t0)
     @info "(3/4) Hessian matrix estimation"
     t0 = time()
-    rhess = batchHessCU(g,X,V,L0,λ=λ,d=ldim,Ψ=Ψ,useCUDA=useCUDA)
+    rhess = batchHess(g,X,V,L0,λ=λ,d=rdim,Ψ=frames,useCUDA=useCUDA)
     divr = -tr.(rhess) # divergence ∈ C⁰
     elapsed(t0)
     @info "(4/4) Jacobian matrix estimation"
     t0 = time()
-    if ssa
-        rplanes = [S[:,1:2] for S in spans]
-        ofix(cur,ref) = det(cur'*ref) < 0 ? [cur[:,begin:end-1] -cur[:,end]] : cur
-        oplanes = propagate((pa,ch,ref) -> ofix(rplanes[ch],ref), g, rplanes[ssart], root=ssart)
-    else
-        oplanes = oriented_spans(g,X,2,ssart)
+    planes = [S[:,1:2] for S in spans]
+    if ssa # also aligns PC1-2 planes
+        planes, = alignSpaces(g, planes; krytol=krytol, useCUDA=false)
+        # force to have same orientation in first 2 dim.
+        fo = det(spans[ssart][:,1:2]'*planes[ssart])
+        fo < 0 && reverse!.(planes,dims=2) # is costly operation?
     end
-    oconcs = [sign(det(oplanes[src(e)]'oplanes[dst(e)])) for e in edges(g)]
+    oconcs = [sign(det(planes[src(e)]'planes[dst(e)])) for e in edges(g)]
     @info "Consistency of orientations (plane): $(sum(oconcs .> 0)/ne(g))" 
-    Vdual = dualvels(V,oplanes,d=1:2) # dual velocities in PC1-2 plane
-    dhess = batchHessCU(g,X,Vdual,L0,λ=ϵ,d=2,Ψ=oplanes) # CUDA may not required
+    Vdual = dualvels(V,planes,d=1:2) # dual velocities in the plane
+    dhess = batchHess(g,X,Vdual,L0,λ=ϵ,d=2,Ψ=planes) # CUDA may not required
     rotr = tr.(dhess) # approx. rotation ∈ C₀ (dual)
-    R2Ψ(r,S,W) = pinv(W'W)*W'*S*[0 -r/2; r/2 0]*S'*W # A in S to A in Ψ
-    # reconstruction of jacobian: J = D(F) = D(-grad) + D(rot) + D(harmonic)
-    rjacobs = [-rhess[i] + R2Ψ(rotr[i],oplanes[i],Ψ[i]) for i in 1:N]
+    rS2W(r,S,W) = (W'W)\(W'*S)*[0 -r/2; r/2 0]*(S'*W) # rot in S to W
+    #  rS2W(r,S,W) = pinv(W'W)*W'*S*[0 -r/2; r/2 0]*S'*W # rot in S to W
+    # Reconstruct jacobian: J = D(F) = D(-grad) + D(rot) [+ D(harmonic)]
+    rjacobs = [-rhess[i] + rS2W(rotr[i],planes[i],frames[i]) for i in 1:N]
     elapsed(t0)
     ddhResult{eltype(w)}(
-        ldim,
+        fdim, rdim, ssa,
         u, divr, rotr, vgrass, # vertex-level values
-        spans, Ψ, oplanes, rhess, rjacobs, # vertex-level matrices
+        spans, frames, planes, rhess, rjacobs, # vertex-level matrices
         w, egrass, rms, # edge-level features
         d0, d0s # operators
     )
 end
 
 """
-    schursel(F::Schur, idx)
+    schurselect(F::Schur, idx::Vector{Int}) -> (values, Z::Matrix)
 
-Get selected invariant subspace calculated by `schur`. 
+Returns the basis of invariant subspace `Z`; the columns are the selected Schur vectors specified by `idx`.
+
+!!! warning "Warning"
+    The invariance is guaranteed if the conjugate pair of the complex eigenvalues were selected.
+
+# Example
+```jldoctest
+julia> using LinearAlgebra: schur
+
+julia> A = [0 1 0; -1 0 0; 0 0 1]
+3×3 Matrix{Int64}:
+  0  1  0
+ -1  0  0
+  0  0  1
+
+julia> F = schur(A);
+
+julia> i, j, = sortperm(abs.(imag.(F.values)),rev=true);
+
+julia> vals, Z = schurselect(F,[i,j]) # x-y plane is the invariant of A 
+(values = ComplexF64[0.0 + 1.0im, 0.0 - 1.0im], Z = [1.0 0.0; 0.0 1.0; 0.0 0.0])
+```
 """
-function schursel(F::Schur,idx::Vector{Int})
+function schurselect(F::Schur, idx::Vector{Int})
     k = length(idx)
-    T, Z, vals = ordschur(F,[i in idx for i in 1:length(F.values)])
-    vals[1:k], Z[:,1:k] # first k vectors span invariant sub.
+    T, Z, vals = ordschur(F, [i in idx for i in 1:length(F.values)])
+    # first k vectors that span invariant subspace
+    (values = vals[1:k], Z = Z[:,1:k])
 end
 
 """
-    basistrans(X, V, W)
+    basischange(A, V, W) -> B::Matrix
 
-Basis trans. of matrix `X` in `V` into `W`
+Change of basis: the matrix `A` in the basis `V` into the basis `W`
 
 !!! warning "Warning"
-    dim(V ⋂ W) should not be 0.
+    Use with caution when span(V) ≠ span(W).
 """
-basistrans(X::AbstractMatrix,V::AbstractMatrix,W::AbstractMatrix) = ((W'*W)\(W'*V))*X*((V'*V)\(V'*W))
+function basischange(A::AbstractMatrix, V::AbstractMatrix, W::AbstractMatrix)
+    ((W'*W)\(W'*V))*A*((V'*V)\(V'*W))
+end
+
+"""
+    basischange(A, V) -> B::Matrix
+
+Change of basis: `A` in the basis `V` into the canonical basis, i.e., W = I
+"""
+function basischange(A::AbstractMatrix, V::AbstractMatrix)
+    if size(A) != size(V)
+        error("Error: change to cannonical basis is only allowed for the same size of square matrices")
+    else
+        V*A*((V'*V)\V')
+    end
+end
 
 end # module ddHodge
 
