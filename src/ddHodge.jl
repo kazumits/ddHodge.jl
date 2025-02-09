@@ -45,14 +45,14 @@ julia> d0 = ddHodge.graphgrad(g)
    ⋅   -1.0  1.0
 ```
 """
-function graphgrad(g::SimpleGraph{Int})
+function graphgrad(g::SimpleGraph{<:Integer})
     I = sparse(1:ne(g), src.(edges(g)), -1.0, ne(g), nv(g))
     J = sparse(1:ne(g), dst.(edges(g)),  1.0, ne(g), nv(g))
     I + J
 end
 
 # Approximate the integration of flux along edges
-function calcwt(g::SimpleGraph{Int}, pts::AbstractMatrix, vel::AbstractMatrix)
+function calcwt(g::SimpleGraph{<:Integer}, pts::AbstractMatrix, vel::AbstractMatrix)
     map(edges(g)) do e
         i, j = src(e), dst(e)
         dx = pts[:,j] - pts[:,i] # i to j
@@ -86,7 +86,7 @@ end
 # Coefficients of directional derivatives w.r.t. Hessian
 function chesse(v::Vector{T}) where T<:AbstractFloat
     n = length(v)
-    c = fill(0.0::T, Int(n*(n-1)/2))
+    c = fill(T(0), Int(n*(n-1)/2))
     k = 1
     for i in 1:n-1, j in i+1:n
         c[k] = 2*v[i]*v[j]
@@ -97,7 +97,7 @@ end
 
 # Preparing the coefficients to solve batch Hessian estimation
 function localHessNS(
-    g::SimpleGraph{Int},
+    g::SimpleGraph{<:Integer},
     i::Int,
     pts::AbstractMatrix,
     vel::AbstractMatrix;
@@ -113,14 +113,14 @@ function localHessNS(
     ηs = [pts[:,j] - pts[:,i] for j in nei]
     d = norm.(ηs)
     #E = B'*mapfoldl(normalize,hcat,ηs)
-    E = B'*hcat(normalize.(ηs)...)
+    E = B'*stack(normalize.(ηs))
     # vi - vj since -gradU is the flow
     y = [η'*(vel[:,i]-vel[:,j]) for (η, j) in zip(ηs, nei)]./d.^2
-    (E=E, y=y, d=d)
+    (; E, y, d)
 end
 
 # Reshape the result into the Hessian matrix form
-function chesse2mat(x::AbstractVector, d::Int)
+function chesse2mat(x::AbstractVector, d::Integer)
     H = fill(0.0, d, d)
     H[diagind(H)] = x[1:d]
     k = d+1
@@ -159,7 +159,7 @@ function propagate(f::Function, g::AbstractGraph, init::T; root::Int=1) where T
 end
 
 # Get subspace of a i-th point by local PCA
-function getspan(g::SimpleGraph{Int}, pts::AbstractMatrix, i::Int, d::Int; ref=nothing)
+function getspan(g::SimpleGraph{<:Integer}, pts::AbstractMatrix, i::Integer, d::Integer; ref=nothing)
     nei = neighbors(g,i)
     nnei = length(nei)
     if nnei == 0
@@ -174,7 +174,7 @@ function getspan(g::SimpleGraph{Int}, pts::AbstractMatrix, i::Int, d::Int; ref=n
     #dists = dists[.!tooclose]
     # higher weight for short distance
     wts = dists.^-2
-    U = svd(Matrix(hcat(wts.*ηs...))).U
+    U = svd(Matrix(stack(wts.*ηs))).U
     # concatenate zeros if deficient
     U = size(U,2) < d ? hcat(U,zeros(size(pts,1),d-size(U,2) )) : U[:,1:d]
     if !isnothing(ref)
@@ -189,7 +189,7 @@ function getspan(g::SimpleGraph{Int}, pts::AbstractMatrix, i::Int, d::Int; ref=n
 end
 
 # Get all spans while aligning orientations of tangent spaces
-function oriented_spans(g::SimpleGraph{Int}, pts::AbstractMatrix, d::Int, root::Int)
+function oriented_spans(g::SimpleGraph{<:Integer}, pts::AbstractMatrix, d::Int, root::Int)
     fdim, N = size(pts)
     rspan = getspan(g,pts,root,d,ref=Matrix(I,fdim,d))
     spans = propagate((pa,ch,vpa) -> getspan(g,pts,ch,d,ref=vpa), g, rspan, root=root)
@@ -222,7 +222,7 @@ end
 # Cellular sheaf over graph, Hansen & Ghrist (2020)
 # todo: applicability for variable sheaf dimensions
 # remark: valid under the assumption of src(e) < dst(e)
-function d0sheaf(g::SimpleGraph{Int}, rmaps::Dict{Tuple{Int,Int},Rmap})
+function d0sheaf(g::SimpleGraph{<:Integer}, rmaps::Dict{Tuple{T,T},Rmap}) where T <: Integer
     d  = length(first(rmaps)[2].pa)
     Is = Vector{Int}(undef,0)
     Js = Vector{Int}(undef,0)
@@ -254,7 +254,7 @@ where ``O_u, O_v`` are the restriction maps of parallel transport matrix.
 
 """
 function alignSpaces(
-    g::SimpleGraph{Int}, ss::Vector{<:AbstractMatrix};
+    g::SimpleGraph{<:Integer}, ss::Vector{<:AbstractMatrix};
     krytol=1e-32::Float64, useCUDA=false::Bool
 )
     N = nv(g)
@@ -264,26 +264,22 @@ function alignSpaces(
     cuspm = useCUDA ? GPU.cuspm : identity
     cuvec = useCUDA ? GPU.cuvec : identity
     L = cuspm(d0'd0)
-    #  x0 = cuvec(rand(N*d))
+    #x0 = cuvec(rand(N*d))
     x0 = cuvec(fill(1.0,N*d))
-    #if usenormalL # faster calculation for Hessian?
-        #Dhi = spdiagm(repeat(degree(g).^(-1/2),inner=d))
-        #L = Dhi*L*Dhi
-    #end
     vals, vecs, = eigsolve(L,x0,d,:SR,issymmetric=true,tol=krytol)
     vecs = collect.(vecs) # to cpu
     vec2dir(x) = normalize.(eachcol(reshape(x,(d,N))))
     # Parallel tangent vectors
-    tvs = [hcat(ss.*vec2dir(v)...) for v in vecs[1:d]]
+    tvs = [stack(ss.*vec2dir(v)) for v in vecs[1:d]]
     # Aligned subspaces (pick each tangent vecs)
     #  sa = [hcat([tvs[i][:,j] for i in 1:d]...) for j in 1:N]
     sa = collect(eachslice(reshape(vcat(tvs...),damb,d,N),dims=3))
-    sa, d0, rms
+    (; sa, d0, rms)
 end
 
 # Batch Hessian matrix estimation
 function batchHess(
-    g::SimpleGraph{Int}, pts::AbstractMatrix, vel::AbstractMatrix, Δ₀::SparseMatrixCSC;
+    g::SimpleGraph{<:Integer}, pts::AbstractMatrix, vel::AbstractMatrix, Δ₀::SparseMatrixCSC;
     d=size(pts,1)::Int, λ=0.1::AbstractFloat, Ψ=fill(I,nv(g))::Array{AbstractMatrix},
     maxiter=5000::Int, useCUDA=false::Bool
 )
@@ -297,7 +293,7 @@ function batchHess(
     X = blockdiag(Ms...)
     #X = mapfoldl(h -> sparse(mapslices(chesse,h.E,dims=1)'), blockdiag, lh)
     p = size(Ms[begin],2)
-    # L = -Δ₀ since (∇β)'(∇β) = -β'Δ₀β 
+    # -Δ₀ since (∇β)'(∇β) = -β'Δ₀β 
     L = kron(-Δ₀,sparse(I,p,p)) # shape of Hessians should be same
     #sol, = linsolve(X'D*X + λ*L, X'D*y, isposdef=true)
     cuspm = useCUDA ? GPU.cuspm : identity
@@ -354,7 +350,7 @@ end
 ddHodge standard workflow
 """
 function ddHodgeWorkflow(
-    g::SimpleGraph, X::AbstractMatrix, V::AbstractMatrix;
+    g::SimpleGraph{<:Integer}, X::AbstractMatrix, V::AbstractMatrix;
     rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64,
     ssa=true::Bool, ssart=1::Int, krytol=1e-32::Float64, useCUDA=false::Bool
 )
@@ -377,7 +373,7 @@ function ddHodgeWorkflow(
     # Subspace alignment of local PCA spaces on nodes
     if ssa
         frames, d0s, rms = alignSpaces(g, spans; krytol=krytol, useCUDA=useCUDA)
-        pas = hcat([rms[Tuple(e)].pa for e in edges(g)]...)
+        pas = stack([rms[Tuple(e)].pa for e in edges(g)])
         elen = [norm(X[:,src(e)]-X[:,dst(e)]) for e in edges(g)]
         egrass = norm.(eachcol(pas)) # Grassmann distance
         vgrass = spdiagm(degree(g).^-1)*abs.(d0)'*(egrass./elen)
@@ -408,10 +404,11 @@ function ddHodgeWorkflow(
     @info "Consistency of orientations (plane): $(sum(oconcs .> 0)/ne(g))" 
     Vdual = dualvels(V,planes,d=1:2) # dual velocities in the plane
     dhess = batchHess(g,X,Vdual,L0,λ=ϵ,d=2,Ψ=planes) # CUDA may not required
-    rotr = tr.(dhess) # approx. rotation ∈ C₀ (dual)
-    rS2W(r,S,W) = (W'W)\(W'*S)*[0 -r/2; r/2 0]*(S'*W) # rot in S to W
+    rotr = tr.(dhess) # approx. of rotation in the plane
+    # maps infinitesimal rotation in S to W; exp(-rQ) ∈ SO(2) when Q' = -Q
+    rS2W(r,S,W) = (W'W)\(W'*S)*[0.0 -0.5r; 0.5r 0.0]*(S'*W)
     #  rS2W(r,S,W) = pinv(W'W)*W'*S*[0 -r/2; r/2 0]*S'*W # rot in S to W
-    # Reconstruct jacobian: J = D(F) = D(-grad) + D(rot) [+ D(harmonic)]
+    # Reconstruct jacobian: J = D(F) = D(-gradF) + D(rotF) [+ residual]
     rjacobs = [-rhess[i] + rS2W(rotr[i],planes[i],frames[i]) for i in 1:N]
     elapsed(t0)
     ddhResult{eltype(w)}(

@@ -26,7 +26,7 @@ function DEC.delaunayGraph(pts::AbstractMatrix;option="Qev")
     etri = tout.edgelist
     vtri = sort(tout.trianglelist,dims=1)
     nop = maximum(vtri)
-    h = Graph(nop) # may contains steiner points
+    h = SimpleGraph(nop) # may contains steiner points
     for i in 1:size(etri,2)
         add_edge!(h,etri[1,i],etri[2,i])
     end
@@ -47,7 +47,7 @@ end
 
 Returns diagonal elements of Hodge star of triangle mesh
 """
-function DEC.stardiags(g::SimpleGraph,pts::AbstractMatrix,tri::Matrix{Int32})
+function DEC.stardiags(g::SimpleGraph,pts::AbstractMatrix,tri::Matrix{<:Integer})
     # cotangents of triangles
     cotans = similar(tri,Float64)
     for t in 1:size(tri,2)
@@ -55,8 +55,8 @@ function DEC.stardiags(g::SimpleGraph,pts::AbstractMatrix,tri::Matrix{Int32})
         for (i,j,k) in [(1,2,3),(2,3,1),(3,1,2)]
             v = normalize(x[:,j] - x[:,i])
             w = normalize(x[:,k] - x[:,i])
-            cosθ  = clamp(v'w,-1.0,1.0)
-            cotans[i,t] = cosθ /sqrt(1-cosθ ^2)
+            cosθ = clamp(v'w,-1.0,1.0)
+            cotans[i,t] = cosθ/sqrt(1-cosθ^2)
         end
     end
 
