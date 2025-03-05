@@ -266,7 +266,7 @@ function alignSpaces(
     L = cuspm(d0'd0)
     #x0 = cuvec(rand(N*d))
     x0 = cuvec(fill(1.0,N*d))
-    vals, vecs, = eigsolve(L,x0,d,:SR,issymmetric=true,tol=krytol)
+    vals, vecs, = eigsolve(L,x0,d,:SR,issymmetric=true,tol=krytol,maxiter=500)
     vecs = collect.(vecs) # to cpu
     vec2dir(x) = normalize.(eachcol(reshape(x,(d,N))))
     # Parallel tangent vectors
