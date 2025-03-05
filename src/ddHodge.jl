@@ -27,7 +27,7 @@ The direction is implicitly determined by node order, i.e., `i -> j` if `i < j`.
 
 # Example
 ```jldoctest
-julia> using Graphs
+julia> using ddHodge.Graphs
 
 julia> g = complete_graph(3)
 {3, 3} undirected simple Int64 graph
@@ -430,7 +430,7 @@ Returns the basis of invariant subspace `Z`; the columns are the selected Schur 
 
 # Example
 ```jldoctest
-julia> using LinearAlgebra: schur
+julia> using ddHodge.LinearAlgebra: schur
 
 julia> A = [0 1 0; -1 0 0; 0 0 1]
 3×3 Matrix{Int64}:
