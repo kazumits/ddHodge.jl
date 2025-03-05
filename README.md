@@ -4,6 +4,8 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://kazumits.github.io/ddHodge.jl/dev/)
 [![Build Status](https://github.com/kazumits/ddHodge.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/kazumits/ddHodge.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
+![ddHodge workflow](.github/images/overview.png)
+
 A Julia package for reconstructing grad, div, and curl from sampled velocities.
 
 ## Install
