@@ -308,7 +308,7 @@ function batchHess(
     chesse2mat.(eachcol(params),d)
 end
 
-"Container of the workflow results"
+"Container of the workflow results. See [`ddHodgeWorkflow`](@ref) for details."
 struct ddhResult{T<:AbstractFloat}
     # Basic parameters
     fdim::Int
@@ -348,6 +348,57 @@ end
     ) -> ddh::ddhResult
 
 ddHodge standard workflow
+
+# Arguments
+
+Required 
+
+* `g::SimpleGraph`: undirected graph of *N* vertices.
+* `X::AbstractMatrix`: the matrices of data points.
+* `V::AbstractMatrix`: the matrices of velocites at the points.
+
+These matrices `X` and `V` should be in the same size of
+*M* variables (rows) x *N* samples (columns) and
+the order of columns should correspond to the vertex order of `g`.
+
+Optional
+
+* `rdim::Int`: the dimension of the tangent space. The default is *M* (no reduction).
+* `λ::Float64=0.1`: the regularization parameter for Hessian estimation.
+* `ϵ::Float64=0.1`: the regularization parameter for Jacobian estimation.
+* `ssa::Bool=true`: the flag of peforming subspace (axis) alignment.
+* `ssart::Int=1`: the index of a vertex where the subspace alignment starts.
+* `krytol::Float64=1e-32`: the tolerance for Krylov solver.
+* `useCUDA::Bool=false`: the flag for GPU acceleration.
+
+# Output
+
+The returned `ddh::ddhResult` consists of the following fields.
+
+Vertex-level features
+
+* `ddh.u`: potential
+* `ddh.div`: divergence
+* `ddh.rot`: rotation (curl)
+* `ddh.vgrass`: Grassmann distance (averaged at vertices)
+* `ddh.spans`: local PCA tangent spaces
+* `ddh.frames`: axes-aligned local PCA spaces
+* `ddh.planes`: PC1-2 tangent planes
+* `ddh.H`: reconstructed Hessian matrices (in ddh.frames)
+* `ddh.J`: reconstructed Jacobian matrices (in ddh.frames)
+
+Edge-level features
+
+* `ddh.w`: edge weight
+* `ddh.egrass`: Grassmann distance
+* `ddh.rmaps`: restriction maps
+
+Operaters
+
+* `ddh.d0`: gradient operator
+* `ddh.d0s`: *sheaf* version of gradient operator
+
+The order of these values is consistent with the vertex/edge order of given graph `g`.
 """
 function ddHodgeWorkflow(
     g::SimpleGraph{<:Integer}, X::AbstractMatrix, V::AbstractMatrix;

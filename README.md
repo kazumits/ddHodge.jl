@@ -1,6 +1,6 @@
 # ddHodge
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://kazumits.github.io/ddHodge.jl/stable/)
+<!---[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://kazumits.github.io/ddHodge.jl/stable/)--->
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://kazumits.github.io/ddHodge.jl/dev/)
 [![Build Status](https://github.com/kazumits/ddHodge.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/kazumits/ddHodge.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
@@ -34,6 +34,16 @@ ddh = ddHodgeWorkflow(g,X,V,rdim=2) # rdim <= k
 ```
 
 You can skip specifying `rdim` if no dimension reduction is required.
+
+The `ddh` object contains the several vertex- and edge-level indicators of dynamics such as:
+
+* `ddh.u`: potential
+* `ddh.div`: divergence
+* `ddh.rot`: rotation (curl)
+* `ddh.vgrass`: Grassmann distance (averaged at vertices)
+
+These values are stored in the order of vertices in `g`.
+See the help page [`ddHodgeWorkflow`](https://kazumits.github.io/ddHodge.jl/dev/#ddHodge.ddHodgeWorkflow-Tuple{Graphs.SimpleGraphs.SimpleGraph,%20AbstractMatrix,%20AbstractMatrix}) for more details and other returned values.
 
 ## GPU acceleration
 
