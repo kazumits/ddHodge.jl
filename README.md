@@ -49,7 +49,7 @@ CUDA.@time ddh = ddHodgeWorkflow(g, X, V, rdim=4, useCUDA=true)
 Before you start, please:
 
 * Install [Muon.jl](https://github.com/scverse/Muon.jl) to load [anndata](https://github.com/scverse/anndata) file after [scvelo](https://github.com/theislab/scvelo) analysis.
-* Download the helper tool `H5ADHelper.jl` from [our repository](https://github.com/kazumits/ddHodge_figures/blob/main/tools/H5ADHelper.jl).
+* Download the helper tool `H5ADHelper.jl` from [here](https://kazumits.github.io/ddh/tools/H5ADHelper.jl).
 
 Below is a minimal example of RNA velocity data analysis.
 
