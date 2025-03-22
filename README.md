@@ -6,7 +6,7 @@
 
 ![ddHodge workflow](.github/images/overview.png)
 
-A Julia package for reconstructing grad, div, and curl from sampled velocities.
+A Julia package for reconstructing potential, divergence and curl from sampled velocities.
 
 ## Install
 
@@ -58,7 +58,8 @@ CUDA.@time ddh = ddHodgeWorkflow(g, X, V, rdim=4, useCUDA=true)
 
 Before you start, please:
 
-* Install [Muon.jl](https://github.com/scverse/Muon.jl) to load [anndata](https://github.com/scverse/anndata) file after [scvelo](https://github.com/theislab/scvelo) analysis.
+* Run [scvelo](https://github.com/theislab/scvelo) to embed the estimated velocity into the PCA space, e.g., with `scvelo.tl.velocity_embedding(data, basis='pca')`.
+* Install [Muon.jl](https://github.com/scverse/Muon.jl) to load [anndata](https://github.com/scverse/anndata) file after scvelo analysis.
 * Download the helper tool `H5ADHelper.jl` from [here](https://kazumits.github.io/ddh/tools/H5ADHelper.jl).
 
 Below is a minimal example of RNA velocity data analysis.
@@ -87,6 +88,12 @@ end
 Now, the cell-centered ddHodge results of potential: `ddh_u`, divergence: `ddh_div`, curl: `ddh_rot` and Grassmann distances (averaged at vertex-level): `ddh_vgrass` are accessible via `adata.obs.ddh_*`.
 
 The saved results in `scvelo_out.h5ad` will be freely incorporated to your favorite platform: Python, R (via [anndata package](https://cran.r-project.org/web/packages/anndata/index.html)), and interactive single-cell data viewers (e.g., [UCSC Cell Browser](http://cellbrowser.rtfd.org/), [CELLxGENE](https://github.com/chanzuckerberg/cellxgene)).
+
+## Citing ddHodge
+
+Our new preprint will be available soon.
+
+Instead, please cite our [preprint](https://doi.org/10.1101/592089), which is a preliminary idea for applying Hodge decomposition to single-cell data.
 
 ## TODO
 

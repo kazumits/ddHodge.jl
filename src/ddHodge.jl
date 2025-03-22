@@ -405,6 +405,7 @@ function ddHodgeWorkflow(
     rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64,
     ssa=true::Bool, ssart=1::Int, krytol=1e-32::Float64, useCUDA=false::Bool
 )
+    @assert is_connected(g) "The input graph `g` should be connected." 
     fdim, N = size(X)
     # Easy timer
     elapsed(from) = @info "... done in $(round((time() - from),digits=3)) sec."
