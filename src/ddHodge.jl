@@ -141,18 +141,23 @@ function dualvels(V::AbstractMatrix, spans::Vector{<:AbstractMatrix}; d=[1,2]::V
 end
 
 # General purpose function:
-#  Propagate values to neighboring vertices from root (along BFS tree)
-function propagate(f::Function, g::AbstractGraph, init::T; root::Int=1) where T
+#  Propagate values to neighboring vertices from roots (along BFS tree)
+function propagate(f::Function, g::AbstractGraph, init::T; roots::Vector{Int}=nothing) where T
+    if isnothing(roots)
+        roots = first.(connected_components(g))
+    end
     #st = Array{typeof(init),1}(undef,nv(g))
     st = Array{T}(undef,nv(g))
-    st[root] = init
-    tree = bfs_tree(SimpleGraph(g),root) # bfs is better than dfs?
-    parents = [root]
-    for p in parents
-        children = neighbors(tree,p)
-        for c in children
-            st[c] = f(p,c,st[p]) # assign some f(p,c,v)
-            push!(parents,c)
+    for rt in roots
+        st[rt] = init
+        tree = bfs_tree(SimpleGraph(g),rt) # bfs is better than dfs?
+        parents = [rt]
+        for p in parents
+            children = neighbors(tree,p)
+            for c in children
+                st[c] = f(p,c,st[p]) # assign some f(p,c,v)
+                push!(parents,c)
+            end
         end
     end
     return st
@@ -189,10 +194,11 @@ function getspan(g::SimpleGraph{<:Integer}, pts::AbstractMatrix, i::Integer, d::
 end
 
 # Get all spans while aligning orientations of tangent spaces
-function oriented_spans(g::SimpleGraph{<:Integer}, pts::AbstractMatrix, d::Int, root::Int)
+function oriented_spans(g::SimpleGraph{<:Integer}, pts::AbstractMatrix, d::Int; iref=1::Int)
     fdim, N = size(pts)
-    rspan = getspan(g,pts,root,d,ref=Matrix(I,fdim,d))
-    spans = propagate((pa,ch,vpa) -> getspan(g,pts,ch,d,ref=vpa), g, rspan, root=root)
+    rspan = getspan(g,pts,iref,d,ref=Matrix(I,fdim,d))
+    roots = first.(connected_components(g))
+    spans = propagate((pa,ch,vpa) -> getspan(g,pts,ch,d,ref=vpa), g, rspan, roots=roots)
     for i in 1:N
         if !isassigned(spans,i) # span of zero-degree vertex
             spans[i] = Matrix(1.0I, fdim, d) # any full rank matrix
@@ -367,7 +373,7 @@ Optional
 * `λ::Float64=0.1`: the regularization parameter for Hessian estimation.
 * `ϵ::Float64=0.1`: the regularization parameter for Jacobian estimation.
 * `ssa::Bool=true`: the flag of peforming subspace (axis) alignment.
-* `ssart::Int=1`: the index of a vertex where the subspace alignment starts.
+* `ssart::Int=1`: the reference node of axis alignment.
 * `krytol::Float64=1e-32`: the tolerance for Krylov solver.
 * `useCUDA::Bool=false`: the flag for GPU acceleration.
 
@@ -405,7 +411,7 @@ function ddHodgeWorkflow(
     rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64,
     ssa=true::Bool, ssart=1::Int, krytol=1e-32::Float64, useCUDA=false::Bool
 )
-    @assert is_connected(g) "The input graph `g` should be connected." 
+    is_connected(g) || @warn "Input graph is not connected. Potentials are not comparable between disconnected nodes." 
     fdim, N = size(X)
     # Easy timer
     elapsed(from) = @info "... done in $(round((time() - from),digits=3)) sec."
@@ -419,7 +425,7 @@ function ddHodgeWorkflow(
     @info "(2/4) Tangent space estimation"
     t0 = time()
     # Try to keep orientations of tangent spaces (local PCA) 
-    spans = oriented_spans(g,X,rdim,ssart)
+    spans = oriented_spans(g,X,rdim; iref=ssart)
     concs = [sign(det(spans[src(e)]'spans[dst(e)])) for e in edges(g)]
     @info "Consistency of orientations: $(sum(concs .> 0)/ne(g))" 
     # Subspace alignment of local PCA spaces on nodes
