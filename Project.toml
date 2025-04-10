@@ -15,8 +15,9 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Triangulate = "f7e6ffb2-c36d-4f8f-a77e-16e897189344"
 
 [extensions]
-ddHodgeTriangulateExt = "Triangulate"
 ddHodgeCUDAExt = "CUDA"
+ddHodgeTriangulateExt = "Triangulate"
 
 [compat]
+Triangulate = "2"
 julia = "1.9"
