@@ -19,6 +19,7 @@ ddHodgeCUDAExt = "CUDA"
 ddHodgeTriangulateExt = "Triangulate"
 
 [compat]
+KrylovKit = "0.9"
 Graphs = "1"
 CUDA = "5"
 julia = "1.9"
