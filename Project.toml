@@ -19,5 +19,6 @@ ddHodgeCUDAExt = "CUDA"
 ddHodgeTriangulateExt = "Triangulate"
 
 [compat]
+Graphs = "1"
 CUDA = "5"
 julia = "1.9"
