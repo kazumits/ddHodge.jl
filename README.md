@@ -45,6 +45,10 @@ The `ddh` object contains the several vertex- and edge-level indicators of dynam
 These values are stored in the order of vertices in `g`.
 See the help page [`ddHodgeWorkflow`](https://kazumits.github.io/ddHodge.jl/dev/#ddHodge.ddHodgeWorkflow-Tuple{Graphs.SimpleGraphs.SimpleGraph,%20AbstractMatrix,%20AbstractMatrix}) for more details and other returned values.
 
+## Advanced usage
+
+Please refer to [the repository](https://github.com/kazumits/ddHodge_figures) to reproduce the figures in [ddHodge paper](https://www.biorxiv.org/content/10.1101/2025.04.16.649050v1).
+
 ## GPU acceleration
 
 After installing [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), you can try the GPU acceleration.
@@ -91,9 +95,21 @@ The saved results in `scvelo_out.h5ad` will be freely incorporated to your favor
 
 ## Citing ddHodge
 
-Our new preprint will be available soon.
+Please cite our preprint: [Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using ddHodge](https://www.biorxiv.org/content/10.1101/2025.04.16.649050v1).
 
-Instead, please cite our [preprint](https://doi.org/10.1101/592089), which is a preliminary idea for applying Hodge decomposition to single-cell data.
+```bibtex
+@article {Maehara2025,
+	author = {Maehara, Kazumitsu and Ohkawa, Yasuyuki},
+	title = {Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using ddHodge},
+	elocation-id = {2025.04.16.649050},
+	year = {2025},
+	doi = {10.1101/2025.04.16.649050},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/10.1101/2025.04.16.649050v1},
+	eprint = {https://www.biorxiv.org/content/early/2025/04/21/2025.04.16.649050.full.pdf},
+	journal = {bioRxiv}
+}
+```
 
 ## TODO
 
