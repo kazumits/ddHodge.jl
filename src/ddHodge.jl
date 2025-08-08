@@ -3,7 +3,7 @@ module ddHodge
 export schurselect, basischange, kNNGraph, ddHodgeWorkflow
 
 using LinearAlgebra, SparseArrays, Graphs
-using KrylovKit: linsolve, eigsolve
+using KrylovKit: linsolve, lssolve, eigsolve
 using NearestNeighbors: KDTree, knn
 
 module DEC
@@ -408,7 +408,7 @@ The order of these values is consistent with the vertex/edge order of given grap
 """
 function ddHodgeWorkflow(
     g::SimpleGraph{<:Integer}, X::AbstractMatrix, V::AbstractMatrix;
-    rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64,
+    rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64, maxiter=5000::Int,
     ssa=true::Bool, ssart=1::Int, krytol=1e-32::Float64, useCUDA=false::Bool
 )
     is_connected(g) || @warn "Input graph is not connected. Potentials are not comparable between disconnected nodes." 
@@ -420,7 +420,7 @@ function ddHodgeWorkflow(
     d0 = graphgrad(g) # gradient: C⁰ ⟶ C¹
     L0 = -d0'd0 # Δ₀
     w = calcwt(g,X,V) # edge weight ∈ C¹
-    u, = linsolve(d0'd0,-d0'w,issymmetric=true) # potential ∈ C⁰
+    u, = lssolve(d0,-w,maxiter=maxiter) # potential ∈ C⁰
     elapsed(t0)
     @info "(2/4) Tangent space estimation"
     t0 = time()
@@ -446,7 +446,7 @@ function ddHodgeWorkflow(
     elapsed(t0)
     @info "(3/4) Hessian matrix estimation"
     t0 = time()
-    rhess = batchHess(g,X,V,L0,λ=λ,d=rdim,Ψ=frames,useCUDA=useCUDA)
+    rhess = batchHess(g,X,V,L0,λ=λ,d=rdim,Ψ=frames,useCUDA=useCUDA,maxiter=maxiter)
     divr = -tr.(rhess) # divergence ∈ C⁰
     elapsed(t0)
     @info "(4/4) Jacobian matrix estimation"
@@ -461,7 +461,7 @@ function ddHodgeWorkflow(
     oconcs = [sign(det(planes[src(e)]'planes[dst(e)])) for e in edges(g)]
     @info "Consistency of orientations (plane): $(sum(oconcs .> 0)/ne(g))" 
     Vdual = dualvels(V,planes,d=1:2) # dual velocities in the plane
-    dhess = batchHess(g,X,Vdual,L0,λ=ϵ,d=2,Ψ=planes) # CUDA may not required
+    dhess = batchHess(g,X,Vdual,L0,λ=ϵ,d=2,Ψ=planes,maxiter=maxiter) # CUDA may not required
     rotr = tr.(dhess) # approx. of rotation in the plane
     # maps infinitesimal rotation in S to W; exp(-rQ) ∈ SO(2) when Q' = -Q
     rS2W(r,S,W) = (W'W)\(W'*S)*[0.0 -0.5r; 0.5r 0.0]*(S'*W)

@@ -1,7 +1,7 @@
 name = "ddHodge"
 uuid = "da5e3d7b-eca3-40e2-9705-a90d0d718b2b"
 authors = ["Kazumitsu Maehara <kazumits@gmail.com> and contributors"]
-version = "0.7.0"
+version = "0.7.1"
 
 [deps]
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
