@@ -261,7 +261,7 @@ where ``O_u, O_v`` are the restriction maps of parallel transport matrix.
 """
 function alignSpaces(
     g::SimpleGraph{<:Integer}, ss::Vector{<:AbstractMatrix};
-    krytol=1e-32::Float64, useCUDA=false::Bool
+    krytol=1e-32::Float64, useCUDA=false::Bool, maxiter=5000::Int
 )
     N = nv(g)
     damb, d = size(ss[begin])
@@ -272,7 +272,7 @@ function alignSpaces(
     L = cuspm(d0'd0)
     #x0 = cuvec(rand(N*d))
     x0 = cuvec(fill(1.0,N*d))
-    vals, vecs, = eigsolve(L,x0,d,:SR,issymmetric=true,tol=krytol,maxiter=500)
+    vals, vecs, = eigsolve(L,x0,d,:SR,issymmetric=true,tol=krytol,maxiter=maxiter)
     vecs = collect.(vecs) # to cpu
     vec2dir(x) = normalize.(eachcol(reshape(x,(d,N))))
     # Parallel tangent vectors
@@ -344,7 +344,7 @@ function Base.show(io::IO, ::MIME"text/plain", ddh::ddhResult)
     ne, nv = size(ddh.d0)
     fd, rd, ssa = [getfield(ddh,x) for x in [:fdim,:rdim,:ssa]]
     ssa = ssa ? "on" : "off"
-    print(io,":::ddHodgge::: values over graph {$nv, $ne}, dimensions: $fd -> $rd (ssa: $ssa)")
+    print(io,":::ddHodge::: values over graph {$nv, $ne}, dimensions: $fd -> $rd (ssa: $ssa)")
 end
 
 """
@@ -411,7 +411,7 @@ function ddHodgeWorkflow(
     rdim=size(X,1)::Int, λ=0.1::Float64, ϵ=λ::Float64, maxiter=5000::Int,
     ssa=true::Bool, ssart=1::Int, krytol=1e-32::Float64, useCUDA=false::Bool
 )
-    is_connected(g) || @warn "Input graph is not connected. Potentials are not comparable between disconnected nodes." 
+    is_connected(g) || @warn "Input graph is not connected. Potentials are not comparable between disconnected clusters." 
     fdim, N = size(X)
     # Easy timer
     elapsed(from) = @info "... done in $(round((time() - from),digits=3)) sec."
@@ -425,12 +425,17 @@ function ddHodgeWorkflow(
     @info "(2/4) Tangent space estimation"
     t0 = time()
     # Try to keep orientations of tangent spaces (local PCA) 
-    spans = oriented_spans(g,X,rdim; iref=ssart)
+    spans = if !ssa && (fdim == rdim)
+        # use the original space if the dimension reduction is not required
+        repeat([Matrix{Float64}(I,fdim,fdim)],N)
+    else
+        oriented_spans(g,X,rdim; iref=ssart)
+    end
     concs = [sign(det(spans[src(e)]'spans[dst(e)])) for e in edges(g)]
     @info "Consistency of orientations: $(sum(concs .> 0)/ne(g))" 
     # Subspace alignment of local PCA spaces on nodes
     if ssa
-        frames, d0s, rms = alignSpaces(g, spans; krytol=krytol, useCUDA=useCUDA)
+        frames, d0s, rms = alignSpaces(g, spans; krytol=krytol, maxiter=maxiter, useCUDA=useCUDA)
         pas = stack([rms[Tuple(e)].pa for e in edges(g)])
         elen = [norm(X[:,src(e)]-X[:,dst(e)]) for e in edges(g)]
         egrass = norm.(eachcol(pas)) # Grassmann distance
@@ -453,7 +458,7 @@ function ddHodgeWorkflow(
     t0 = time()
     planes = [S[:,1:2] for S in spans]
     if ssa # also aligns PC1-2 planes
-        planes, = alignSpaces(g, planes; krytol=krytol, useCUDA=false)
+        planes, = alignSpaces(g, planes; krytol=krytol, maxiter=maxiter, useCUDA=false)
         # force to have same orientation in first 2 dim.
         fo = det(spans[ssart][:,1:2]'*planes[ssart])
         fo < 0 && reverse!.(planes,dims=2) # is costly operation?

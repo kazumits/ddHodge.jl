@@ -93,6 +93,10 @@ Now, the cell-centered ddHodge results of potential: `ddh_u`, divergence: `ddh_d
 
 The saved results in `scvelo_out.h5ad` will be freely incorporated to your favorite platform: Python, R (via [anndata package](https://cran.r-project.org/web/packages/anndata/index.html)), and interactive single-cell data viewers (e.g., [UCSC Cell Browser](http://cellbrowser.rtfd.org/), [CELLxGENE](https://github.com/chanzuckerberg/cellxgene)).
 
+![POISelection](.github/images/cellbrowser_ann_sm.jpg)
+
+This image shows an example of the interactive POI (point-of-interest) selection. Users can visually identify cells with a high divergence value (1) by color and click to select them as a POI (2). The copied cell IDs (3) can be used for further detailed analysis.
+
 ## Citing ddHodge
 
 Please cite our preprint: [Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using ddHodge](https://www.biorxiv.org/content/10.1101/2025.04.16.649050v1).
