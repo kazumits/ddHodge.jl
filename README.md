@@ -99,19 +99,21 @@ This image shows an example of the interactive POI (point-of-interest) selection
 
 ## Citing ddHodge
 
-Please cite our preprint: [Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using ddHodge](https://www.biorxiv.org/content/10.1101/2025.04.16.649050v1).
+Please cite our paper (published in late 2025): [Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using ddHodge](https://doi.org/10.1038/s41467-025-67782-6).
 
 ```bibtex
-@article {Maehara2025,
+@article{maehara2025,
+	title = {Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using {ddHodge}},
+	volume = {16},
+	issn = {2041-1723},
+	url = {https://www.nature.com/articles/s41467-025-67782-6},
+	doi = {10.1038/s41467-025-67782-6},
+	number = {1},
+	journal = {Nature Communications},
 	author = {Maehara, Kazumitsu and Ohkawa, Yasuyuki},
-	title = {Geometry-preserving vector field reconstruction of high-dimensional cell-state dynamics using ddHodge},
-	elocation-id = {2025.04.16.649050},
+	month = dec,
 	year = {2025},
-	doi = {10.1101/2025.04.16.649050},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/10.1101/2025.04.16.649050v1},
-	eprint = {https://www.biorxiv.org/content/early/2025/04/21/2025.04.16.649050.full.pdf},
-	journal = {bioRxiv}
+	pages = {11342},
 }
 ```
 
