@@ -63,18 +63,19 @@ CUDA.@time ddh = ddHodgeWorkflow(g, X, V, rdim=4, useCUDA=true)
 Before you start, please:
 
 * Run [scvelo](https://github.com/theislab/scvelo) to embed the estimated velocity into the PCA space, e.g., with `scvelo.tl.velocity_embedding(data, basis='pca')`.
-* Install [Muon.jl](https://github.com/scverse/Muon.jl) to load [anndata](https://github.com/scverse/anndata) file after scvelo analysis.
-* Download the helper tool `H5ADHelper.jl` from [here](https://kazumits.github.io/ddh/tools/H5ADHelper.jl).
+* Install [PythonCall.jl](https://github.com/JuliaPy/PythonCall.jl) Julia package and [anndata](https://github.com/scverse/anndata) python package (e.g, `pip install anndata`) to load scvelo analysis results.
 
 Below is a minimal example of RNA velocity data analysis.
 
 ```julia
+ENV["JULIA_PYTHONCALL_EXE"] = "/path/to/your/python"
 # load scvelo output in anndata format
-import Muon
+using PythonCall
 h5file = "scvelo_out.h5ad"
-adata = Muon.readh5ad(h5file,backed=false)
-X = adata.obsm["X_pca"]' # should be transposed
-V = adata.obsm["velocity_pca"]' # should be transposed
+anndata = pyimport("anndata")
+adata = anndata.read_h5ad(h5file)
+X = pyconvert(Matrix,adata.obsm["X_pca"])' # should be transposed
+V = pyconvert(Matrix,adata.obsm["velocity_pca"])' # should be transposed
 
 # ddHodge part
 using ddHodge
@@ -82,11 +83,12 @@ g, kdtree, = kNNGraph(X,12) # k = 12
 ddh = ddHodgeWorkflow(g,X,V,rdim=4) # rdim <= k
 
 # save ddHodge results to the loaded anndata
-@isdefined(H5Adh) || include("H5ADHelper.jl")
-let featurestowrite = [:u,:div,:rot,:vgrass]
-    [adata.obs[!,"ddh_$(ft)"] = getfield(ddh,ft) for ft in featurestowrite]
-    H5Adh.insertddh(h5file,ddh,keys=featurestowrite)
+for ft in [:u, :div, :rot, :vgrass]
+    adata.obs["ddh_$(ft)"] = pylist(getfield(ddh, ft))
 end
+anndata.settings.allow_write_nullable_strings = true
+adata.write_h5ad(h5file)
+adata.obs
 ```
 
 Now, the cell-centered ddHodge results of potential: `ddh_u`, divergence: `ddh_div`, curl: `ddh_rot` and Grassmann distances (averaged at vertex-level): `ddh_vgrass` are accessible via `adata.obs.ddh_*`.
