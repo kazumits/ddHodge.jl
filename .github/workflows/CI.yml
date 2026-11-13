@@ -30,6 +30,13 @@ jobs:
           - ubuntu-latest
         arch:
           - x64
+        exclude:
+          - version: '1.9'
+            os: ubuntu-latest
+        include:
+          - version: '1.9'
+            os: ubuntu-22.04
+            arch: x64
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
